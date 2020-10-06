@@ -85,6 +85,8 @@ lib/pycocotools/_mask.c
 lib/nms/cpu_nms.c
 
 output/*
+output_focal_12size/*
+output*/*
 models/*
 log/*
 data/*

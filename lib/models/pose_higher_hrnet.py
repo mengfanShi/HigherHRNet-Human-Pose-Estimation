@@ -30,6 +30,39 @@ def conv3x3(in_planes, out_planes, stride=1):
                      padding=1, bias=False)
 
 
+############################### PRM #########################
+class conv_bn_relu(nn.Module):
+    '''
+    Pose Refine Mechine
+    '''
+    def __init__(self, in_planes, out_planes, kernel_size, stride, padding,
+            has_bn=True, has_relu=True, groups=1):
+        super(conv_bn_relu, self).__init__()
+        self.conv = nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size,
+                stride=stride, padding=padding, groups=groups)
+        self.has_bn = has_bn
+        self.has_relu = has_relu
+        self.bn = nn.BatchNorm2d(out_planes)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        def _func_factory(conv, bn, relu, has_bn, has_relu):
+            def func(x):
+                x = conv(x)
+                if has_bn:
+                    x = bn(x)
+                if has_relu:
+                    x = relu(x)
+                return x
+            return func
+
+        func = _func_factory(
+                self.conv, self.bn, self.relu, self.has_bn, self.has_relu)
+        x = func(x)
+
+        return x
+##############################################################
+
 class BasicBlock(nn.Module):
     expansion = 1
 
@@ -287,6 +320,9 @@ class PoseHigherResolutionNet(nn.Module):
         self.stage3, pre_stage_channels = self._make_stage(
             self.stage3_cfg, num_channels)
 
+        # Do middle supervision
+        self.middle_layers = self._make_middle_layers(cfg, pre_stage_channels[0])
+
         self.stage4_cfg = cfg['MODEL']['EXTRA']['STAGE4']
         num_channels = self.stage4_cfg['NUM_CHANNELS']
         block = blocks_dict[self.stage4_cfg['BLOCK']]
@@ -307,6 +343,22 @@ class PoseHigherResolutionNet(nn.Module):
         self.loss_config = cfg.LOSS
 
         self.pretrained_layers = cfg['MODEL']['EXTRA']['PRETRAINED_LAYERS']
+
+        ##################### Add PRM in the final layer #################
+        self.output_chl_num = 17
+        self.conv_bn_relu_prm_1 = conv_bn_relu(self.output_chl_num, self.output_chl_num, kernel_size=3,
+                stride=1, padding=1, has_bn=True, has_relu=True,)
+        self.conv_bn_relu_prm_2_1 = conv_bn_relu(self.output_chl_num, self.output_chl_num, kernel_size=1,
+                stride=1, padding=0, has_bn=True, has_relu=True,)
+        self.conv_bn_relu_prm_2_2 = conv_bn_relu(self.output_chl_num, self.output_chl_num, kernel_size=1,
+                stride=1, padding=0, has_bn=True, has_relu=True,)
+        self.sigmoid2 = nn.Sigmoid()
+        self.conv_bn_relu_prm_3_1 = conv_bn_relu(self.output_chl_num, self.output_chl_num, kernel_size=1,
+                stride=1, padding=0, has_bn=True, has_relu=True,)
+        self.conv_bn_relu_prm_3_2 = conv_bn_relu(self.output_chl_num, self.output_chl_num, kernel_size=9,
+                stride=1, padding=4, has_bn=True, has_relu=True, groups=self.output_chl_num)
+        self.sigmoid3 = nn.Sigmoid()
+        ###################################################################
 
     def _make_final_layers(self, cfg, input_channels):
         dim_tag = cfg.MODEL.NUM_JOINTS if cfg.MODEL.TAG_PER_JOINT else 1
@@ -337,6 +389,23 @@ class PoseHigherResolutionNet(nn.Module):
             ))
 
         return nn.ModuleList(final_layers)
+
+    def _make_middle_layers(self, cfg, input_channels):
+        dim_tag = cfg.MODEL.NUM_JOINTS if cfg.MODEL.TAG_PER_JOINT else 1
+        extra = cfg.MODEL.EXTRA
+
+        middle_layers = []
+        output_channels = cfg.MODEL.NUM_JOINTS + dim_tag \
+            if cfg.LOSS.AE_MIDDLE_LOSS[0] else cfg.MODEL.NUM_JOINTS
+        middle_layers.append(nn.Conv2d(
+            in_channels=input_channels,
+            out_channels=output_channels,
+            kernel_size=extra.FINAL_CONV_KERNEL,
+            stride=1,
+            padding=1 if extra.FINAL_CONV_KERNEL == 3 else 0
+        ))
+
+        return nn.ModuleList(middle_layers)
 
     def _make_deconv_layers(self, cfg, input_channels):
         dim_tag = cfg.MODEL.NUM_JOINTS if cfg.MODEL.TAG_PER_JOINT else 1
@@ -515,6 +584,20 @@ class PoseHigherResolutionNet(nn.Module):
 
             x = self.deconv_layers[i](x)
             y = self.final_layers[i+1](x)
+
+            ######### Add PRM  #########################
+            out = self.conv_bn_relu_prm_1(y)
+            out_1 = out
+            out_2 = torch.nn.functional.adaptive_avg_pool2d(out_1, (1, 1))
+            out_2 = self.conv_bn_relu_prm_2_1(out_2)
+            out_2 = self.conv_bn_relu_prm_2_2(out_2)
+            out_2 = self.sigmoid2(out_2)
+            out_3 = self.conv_bn_relu_prm_3_1(out_1)
+            out_3 = self.conv_bn_relu_prm_3_2(out_3)
+            out_3 = self.sigmoid3(out_3)
+            y = out_1.mul(1 + out_2.mul(out_3))
+            #############################################
+
             final_outputs.append(y)
 
         return final_outputs

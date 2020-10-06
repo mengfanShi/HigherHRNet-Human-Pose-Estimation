@@ -66,6 +66,8 @@ _C.LOSS.PULL_LOSS_FACTOR = (0.001,)
 # Whether use focal loss
 _C.LOSS.USE_FOCAL_LOSS = True
 _C.LOSS.FOCAL_LOSS_FACTOR = [0.01, 0.1, 0.02]
+_C.LOSS.AE_MIDDLE_LOSS = [True, ]
+_C.LOSS.HEATMAP_MIDDLE_LOSS = [True, ]
 
 # DATASET related params
 _C.DATASET = CN()
