@@ -10,6 +10,7 @@ from __future__ import division
 from __future__ import print_function
 
 import torch.utils.data
+import numpy as np
 
 from .COCODataset import CocoDataset as coco
 from .COCOKeypoints import CocoKeypoints as coco_kpt
@@ -53,6 +54,14 @@ def build_dataset(cfg, is_train):
         joints_generator,
         transforms
     )
+
+    validation_split = 0.1
+    dataset_size = len(dataset)
+    indices = list(range(dataset_size))
+    split = int(np.floor(validation_split * dataset_size))
+    train_indices, val_indices = indices[split:], indices[:split]
+    valid_dataset = torch.utils.data.Subset(dataset, val_indices)
+    dataset = valid_dataset
 
     return dataset
 

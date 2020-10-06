@@ -63,6 +63,10 @@ _C.LOSS.AE_LOSS_TYPE = 'max'
 _C.LOSS.PUSH_LOSS_FACTOR = (0.001,)
 _C.LOSS.PULL_LOSS_FACTOR = (0.001,)
 
+# Whether use focal loss
+_C.LOSS.USE_FOCAL_LOSS = True
+_C.LOSS.FOCAL_LOSS_FACTOR = [0.01, 0.1, 0.02]
+
 # DATASET related params
 _C.DATASET = CN()
 _C.DATASET.ROOT = ''
@@ -141,7 +145,7 @@ _C.TEST.PROJECT2IMAGE = False
 _C.TEST.WITH_HEATMAPS = (True,)
 _C.TEST.WITH_AE = (True,)
 
-_C.TEST.LOG_PROGRESS = False
+_C.TEST.LOG_PROGRESS = True
 
 # debug
 _C.DEBUG = CN()

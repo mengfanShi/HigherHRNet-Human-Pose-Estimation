@@ -37,6 +37,29 @@ class HeatmapLoss(nn.Module):
         # loss = loss.mean(dim=3).mean(dim=2).sum(dim=1)
         return loss
 
+class FocalL2Loss(nn.Module):
+    """
+    Compute focal l2 loss between predict and groundtruth
+    :param thre: the threshold to distinguish between the foreground
+                 heatmap pixels and the background heatmap pixels
+    :param alpha beta: compensation factors to reduce the punishment of easy
+                 samples (both easy foreground pixels and easy background pixels) 
+    """
+    def __init__(self, thre=0.01, alpha=0.1, beta=0.02):
+        super().__init__()
+        self.thre = thre
+        self.alpha = alpha
+        self.beta = beta
+    
+    def forward(self, pred, gt, mask):
+        assert pred.size() == gt.size()
+        st = torch.where(torch.ge(gt, self.thre), pred - self.alpha, 1 - pred - self.beta)
+        factor = torch.abs(1. - st)
+        loss = ((pred - gt)**2 * factor) * mask[:, None, :, :].expand_as(pred)
+        loss = loss.mean(dim=3).mean(dim=2).mean(dim=1)
+        # loss = loss.mean(dim=3).mean(dim=2).sum(dim=1)
+        return loss
+
 
 class AELoss(nn.Module):
     def __init__(self, loss_type):
@@ -183,11 +206,13 @@ class MultiLossFactory(nn.Module):
 
         self.num_joints = cfg.MODEL.NUM_JOINTS
         self.num_stages = cfg.LOSS.NUM_STAGES
+        focal_factor = cfg.LOSS.FOCAL_LOSS_FACTOR
 
         self.heatmaps_loss = \
             nn.ModuleList(
                 [
-                    HeatmapLoss()
+                    FocalL2Loss(focal_factor[0], focal_factor[1], focal_factor[2]) 
+                    if cfg.LOSS.USE_FOCAL_LOSS else HeatmapLoss()
                     if with_heatmaps_loss else None
                     for with_heatmaps_loss in cfg.LOSS.WITH_HEATMAPS_LOSS
                 ]
